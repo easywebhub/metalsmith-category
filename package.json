@@ -1,0 +1,19 @@
+{
+  "name": "metalsmith-category",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git@github.com:easywebhub/metalsmith-category.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "to-function": "^2.0.6",
+    "xtend": "^4.0.1"
+  }
+}

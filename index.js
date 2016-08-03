@@ -92,7 +92,17 @@ function paginate(files, metalsmith, done) {
             return false
         }
 
-        var pageOptions;
+        var pageOptions, category, categoryPath;
+
+        if (name === 'root') {
+            category = '';
+            categoryPath = '';
+        } else {
+            category = name;
+            categoryPath = category.replace(/\./g, '/')
+        }
+
+        //console.log('category', category);
         if (metadata.categoryOption[name])
             pageOptions = extend(DEFAULTS, metadata.categoryOption[name]);
         else
@@ -152,6 +162,8 @@ function paginate(files, metalsmith, done) {
 
                 var pagination = {
                     name: name,
+                    category: category,
+                    categoryPath: categoryPath,
                     index: length,
                     num: length + 1,
                     pages: pages,
@@ -284,7 +296,7 @@ module.exports = function (opts) {
         }
 
         // sort category
-        for(var key in metadata.category) {
+        for (var key in metadata.category) {
             //console.log('sorting collection: %s', key);
             var settings = categoryOption[key];
             if (!settings)
@@ -311,6 +323,7 @@ module.exports = function (opts) {
         }
 
         //console.log('metadata.category', metadata.category);
+        //console.log('metadata.category', metadata.category['tin-tuc.the-gioi'])
         //console.log('metadata.categoryOption', metadata.categoryOption);
 
         return paginate(files, metalsmith, done);

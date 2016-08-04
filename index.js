@@ -95,8 +95,8 @@ function paginate(files, metalsmith, done) {
         var pageOptions, category, categoryPath;
 
         if (name === 'root') {
-            category = '';
-            categoryPath = '';
+            category = 'index';
+            categoryPath = 'index';
         } else {
             category = name;
             categoryPath = category.replace(/\./g, '/')

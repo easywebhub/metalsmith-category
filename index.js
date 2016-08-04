@@ -177,6 +177,7 @@ function paginate(files, metalsmith, done) {
                     layout: pageOptions.layout,
                     contents: pageOptions.pageContents,
                     path: interpolate(pageOptions.path, pagination),
+                    metadata: pageOptions.metadata ? pageOptions.metadata : {},
                     pagination: pagination
                 })
 

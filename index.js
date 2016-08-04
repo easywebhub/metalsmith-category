@@ -240,12 +240,15 @@ module.exports = function (opts) {
             });
 
             // normalize category options
+            /*
             var keys = [];
             for (var key in categoryOption) {
                 if (!categoryOption.hasOwnProperty(key)) continue;
                 keys.push(key);
             }
+            
             keys.sort();
+
             for (var key in categoryOption) {
                 var terms = key.split('.');
                 terms.pop(); // remove last category chunk (already had options)                
@@ -260,6 +263,7 @@ module.exports = function (opts) {
                     }
                 }
             }
+            */
         } catch (ex) {
             console.log(ex);
         }
@@ -290,6 +294,7 @@ module.exports = function (opts) {
             // add content to flat categories map
             for (var i = 0; i < categories.length; i++) {
                 var key = categories.slice(0, i + 1).join('.');
+                if(!categoryOption[key]) continue; // skip array don't have config options
                 category[key] = category[key] || [];
                 category[key].push(data);
             }

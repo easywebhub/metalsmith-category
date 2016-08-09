@@ -5,14 +5,16 @@ var extend = require('xtend');
 var loadMetadata = require('read-metadata').sync;
 
 var DEFAULTS = {
-    sortBy: 'date',
-    reverse: true,
-    metadata: {},
-    layout: 'category.html',
-    path: 'page/:name/:num/index.html',
-    perPage: 2,
-    noPageOne: false,
-    pageContents: new Buffer('')
+    "sortBy": "date",
+    "reverse": false,
+    "metadata": {},
+    "displayName": "Default",
+    "perPage": 10,
+    "noPageOne": true,
+    "pageContents": new Buffer(''),
+    "layout": "default.category.html",
+    "first": ":categoryPath/index.html",
+    "path": ":categoryPath/page/:num/index.html"
 }
 
 function existsSync(filePath) {
@@ -75,7 +77,6 @@ function createPagesUtility(pages, index) {
 
 function paginate(files, metalsmith, done) {
     var metadata = metalsmith.metadata();
-
     // Iterate over all the paginate names and match with collections.
     var complete = Object.keys(metadata.category).every(function (name) {
         var collection;
@@ -92,23 +93,26 @@ function paginate(files, metalsmith, done) {
             return false
         }
 
+        // ignore category collection that has no config file        
+        if (!metadata.categoryOption[name]) {
+            console.log('skip category don\'t have config', name);
+            return true; // skip array don't have config options
+        }
+
         var pageOptions, category, categoryPath;
 
-        if (name === 'root') {
-            category = 'index';
-            categoryPath = 'index';
+        if (name === 'default') {
+            category = 'default';
+            categoryPath = 'default';
         } else {
             category = name;
             categoryPath = category.replace(/\./g, '/')
         }
 
-        //console.log('category', category);
         if (metadata.categoryOption[name])
             pageOptions = extend(DEFAULTS, metadata.categoryOption[name]);
         else
-            pageOptions = extend(DEFAULTS, metadata.categoryOption['root']);
-
-        //console.log('name', name, 'pageOptions', pageOptions);
+            pageOptions = extend(DEFAULTS, metadata.categoryOption['default']);
 
         var toShow = collection
         var groupBy = toFn(pageOptions.groupBy || groupByPagination)
@@ -153,7 +157,7 @@ function paginate(files, metalsmith, done) {
         // Sort pages into "categories".
         toShow.forEach(function (file, index) {
             var name = String(groupBy(file, index, pageOptions))
-
+            
             // Keep pages in the order they are returned. E.g. Allows sorting
             // by published year to work.
             if (!pageMap.hasOwnProperty(name)) {
@@ -220,7 +224,7 @@ function paginate(files, metalsmith, done) {
 
         return true
     })
-
+    
     return complete && done();
 }
 
@@ -236,7 +240,7 @@ module.exports = function (opts) {
                 if (!stat.isFile()) return;
                 var key = filePath.substr(0, filePath.lastIndexOf('.')); // remove '.json'
                 if (key === 'default')
-                    key = 'root';
+                    key = 'default';
                 categoryOption[key] = loadMetadata(fullPath);
             });
 
@@ -258,7 +262,7 @@ module.exports = function (opts) {
                     var option = categoryOption[checkKey];
                     if (option) continue;
                     if (i === 0) {
-                        categoryOption[checkKey] = categoryOption['root'];
+                        categoryOption[checkKey] = categoryOption['default'];
                     } else {
                         categoryOption[checkKey] = categoryOption[terms.slice(0, i).join('.')];
                     }
@@ -270,43 +274,56 @@ module.exports = function (opts) {
         }
     }
 
+    var categoryFilePrefix = 'category' + path.sep;
+    var metadataFilePrefix = 'metadata' + path.sep;
     return function (files, metalsmith, done) {
         var metadata = metalsmith.metadata();
         var category = {
-            root: []
+            default: []
         };
         metadata.category = category;
         metadata.categoryOption = categoryOption;
 
-        // only process file begin with tag/ and file has category metadata
+        // only process file has category metadata
         for (var filePath in files) {
             if (!files.hasOwnProperty(filePath))
                 continue;
+            
+            // remove category file from metalsmith's files
+            if (filePath.startsWith(categoryFilePrefix)) {
+                delete files[filePath];
+                continue;
+            }
 
-            var data = files[filePath];
+            // TODO remove metadata file SHOULD NOT BE HERE
+            if (filePath.startsWith(metadataFilePrefix)) {
+                delete files[filePath];
+                continue;
+            }
+
+            var data = files[filePath];            
             filePath = filePath.replace(/\\/g, '/'); // replace all \ with /
 
             // add all content file to flat map
             if (!data.category)
                 continue; // skip file with no category in metadata            
-            category.root.push(data); // add to root
+            category.default.push(data); // add to default
             data.path = filePath // add them path property
             var categories = data.category.split('.');
             // add content to flat categories map
             for (var i = 0; i < categories.length; i++) {
                 var key = categories.slice(0, i + 1).join('.');
-                if(!categoryOption[key]) continue; // skip array don't have config options
+                // van add full tree category
                 category[key] = category[key] || [];
                 category[key].push(data);
             }
         }
-
+console.log('category', category);
         // sort category
         for (var key in metadata.category) {
-            //console.log('sorting collection: %s', key);
             var settings = categoryOption[key];
             if (!settings)
-                settings = categoryOption['root'];
+                settings = categoryOption['default'];
             var sort = settings.sortBy || 'date';
             var col = metadata.category[key];
 
@@ -327,10 +344,6 @@ module.exports = function (opts) {
 
             if (settings.reverse) col.reverse();
         }
-
-        //console.log('metadata.category', metadata.category);
-        //console.log('metadata.category', metadata.category['tin-tuc.the-gioi'])
-        //console.log('metadata.categoryOption', metadata.categoryOption);
 
         return paginate(files, metalsmith, done);
     }

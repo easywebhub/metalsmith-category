@@ -93,7 +93,7 @@ function paginate(files, metalsmith, done) {
             return false
         }
 
-        // ignore category collection that has no config file        
+        // ignore category collection that has no config file
         if (!metadata.categoryOption[name]) {
             console.log('skip category don\'t have config', name);
             return true; // skip array don't have config options
@@ -103,7 +103,7 @@ function paginate(files, metalsmith, done) {
 
         if (name === 'default') {
             category = 'default';
-            categoryPath = 'default';
+            categoryPath = './page';
         } else {
             category = name;
             categoryPath = category.replace(/\./g, '/')
@@ -167,6 +167,7 @@ function paginate(files, metalsmith, done) {
                 var pagination = {
                     name: name,
                     category: category,
+                    categoryDisplayName: pageOptions.displayName,
                     categoryPath: categoryPath,
                     index: length,
                     num: length + 1,

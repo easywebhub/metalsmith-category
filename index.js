@@ -318,7 +318,7 @@ module.exports = function (opts) {
                 category[key].push(data);
             }
         }
-console.log('category', category);
+
         // sort category
         for (var key in metadata.category) {
             var settings = categoryOption[key];

@@ -1,5 +1,6 @@
 var path = require('path');
 var fs = require('fs');
+var util = require('util');
 var toFn = require('to-function');
 var extend = require('xtend');
 var loadMetadata = require('read-metadata').sync;
@@ -8,12 +9,12 @@ var DEFAULTS = {
     "sortBy": "date",
     "reverse": false,
     "metadata": {},
-    "displayName": "Default",
+    "displayName": "Root",
     "perPage": 10,
     "noPageOne": true,
     "pageContents": new Buffer(''),
     "layout": "default.category.html",
-    "first": ":categoryPath/index.html",
+    "first": ":categoryPath",
     "path": ":categoryPath/page/:num/index.html"
 }
 
@@ -75,50 +76,55 @@ function createPagesUtility(pages, index) {
     }
 }
 
-function paginate(files, metalsmith, done) {
+function trimPermanentLink(href) {
+    if (href.endsWith('/index.html'))
+        return href.slice(0, -11);
+    return href;
+}
+
+function paginate(files, metalsmith, done, categoryFlatMap, categoryOption) {
     var metadata = metalsmith.metadata();
     // Iterate over all the paginate names and match with collections.
-    var complete = Object.keys(metadata.category).every(function (name) {
+    var complete = Object.keys(categoryFlatMap).every(function (name) {
         var collection;
 
         // Catch nested collection reference errors.
         //try {
         //    collection = toFn(name)(metadata)
         //} catch (error) { }
-        collection = metadata.category[name];
+        collection = categoryFlatMap[name];
 
         if (!collection) {
             done(new TypeError('Collection not found (' + name + ')'))
-
             return false
         }
 
         // ignore category collection that has no config file
-        if (!metadata.categoryOption[name]) {
+        if (!categoryOption[name]) {
             console.log('skip category don\'t have config', name);
             return true; // skip array don't have config options
         }
 
         var pageOptions, category, categoryPath;
 
-        if (name === 'default') {
-            category = 'default';
+        if (name === 'root') {
+            category = 'root';
             categoryPath = './page';
         } else {
             category = name;
             categoryPath = category.replace(/\./g, '/')
         }
 
-        if (metadata.categoryOption[name])
-            pageOptions = extend(DEFAULTS, metadata.categoryOption[name]);
+        if (categoryOption[name])
+            pageOptions = extend(DEFAULTS, categoryOption[name]);
         else
-            pageOptions = extend(DEFAULTS, metadata.categoryOption['default']);
+            pageOptions = extend(DEFAULTS, categoryOption['root']);
 
-        var toShow = collection
+        var toShow = collection.files
         var groupBy = toFn(pageOptions.groupBy || groupByPagination)
 
         if (pageOptions.filter) {
-            toShow = collection.filter(toFn(pageOptions.filter))
+            toShow = collection.files.filter(toFn(pageOptions.filter))
         }
 
         if (!pageOptions.template && !pageOptions.layout) {
@@ -157,7 +163,7 @@ function paginate(files, metalsmith, done) {
         // Sort pages into "categories".
         toShow.forEach(function (file, index) {
             var name = String(groupBy(file, index, pageOptions))
-            
+
             // Keep pages in the order they are returned. E.g. Allows sorting
             // by published year to work.
             if (!pageMap.hasOwnProperty(name)) {
@@ -167,7 +173,7 @@ function paginate(files, metalsmith, done) {
                 var pagination = {
                     name: name,
                     category: category,
-                    categoryDisplayName: pageOptions.displayName,
+                    displayName: pageOptions.displayName,
                     categoryPath: categoryPath,
                     index: length,
                     num: length + 1,
@@ -176,14 +182,17 @@ function paginate(files, metalsmith, done) {
                     getPages: createPagesUtility(pages, length)
                 }
 
+                var pagePath = interpolate(pageOptions.path, pagination); 
                 // Generate the page data.
                 var page = extend(pageOptions.pageMetadata, {
                     template: pageOptions.template,
                     layout: pageOptions.layout,
                     contents: pageOptions.pageContents,
-                    path: interpolate(pageOptions.path, pagination),
-                    metadata: pageOptions.metadata ? pageOptions.metadata : {},
-                    pagination: pagination
+                    href: trimPermanentLink(pagePath),
+                    path: pagePath,
+                    metadata: pageOptions.metadata || {},
+                    pagination: pagination,
+                    AllCategory: metadata.AllCategory
                 })
 
                 // Copy collection metadata onto every page "collection".
@@ -222,111 +231,144 @@ function paginate(files, metalsmith, done) {
             page.pagination.first = pages[0]
             page.pagination.last = pages[pages.length - 1]
         })
-
+        //console.log('pages', pages);
         return true
     })
-    
+
     return complete && done();
 }
 
 module.exports = function (opts) {
-    var categoryOption = {};
-    // doc category options from opts.directory
-    if (opts.directory) {
-        try {
-            var files = fs.readdirSync(opts.directory);
-            files.forEach(function (filePath) {
-                var fullPath = path.join(opts.directory, filePath);
-                var stat = fs.statSync(fullPath);
-                if (!stat.isFile()) return;
-                var key = filePath.substr(0, filePath.lastIndexOf('.')); // remove '.json'
-                if (key === 'default')
-                    key = 'default';
-                categoryOption[key] = loadMetadata(fullPath);
-            });
-
-            // normalize category options
-            /*
-            var keys = [];
-            for (var key in categoryOption) {
-                if (!categoryOption.hasOwnProperty(key)) continue;
-                keys.push(key);
-            }
-            
-            keys.sort();
-
-            for (var key in categoryOption) {
-                var terms = key.split('.');
-                terms.pop(); // remove last category chunk (already had options)                
-                for (var i = 0; i < terms.length; i++) {
-                    var checkKey = terms.slice(0, i + 1).join('.');
-                    var option = categoryOption[checkKey];
-                    if (option) continue;
-                    if (i === 0) {
-                        categoryOption[checkKey] = categoryOption['default'];
-                    } else {
-                        categoryOption[checkKey] = categoryOption[terms.slice(0, i).join('.')];
-                    }
-                }
-            }
-            */
-        } catch (ex) {
-            console.log(ex);
-        }
-    }
-
-    var categoryFilePrefix = 'category' + path.sep;
-    var metadataFilePrefix = 'metadata' + path.sep;
     return function (files, metalsmith, done) {
         var metadata = metalsmith.metadata();
-        var category = {
-            default: []
+        var categoryFilePrefix = 'metadata' + path.sep + 'category' + path.sep;
+
+        var categoryFlatMap = {
+            root: {
+                category: 'root',
+                categoryDisplayName: 'Root',
+                files: [],
+            }
         };
-        metadata.category = category;
-        metadata.categoryOption = categoryOption;
+        var categoryOptionMap = {};
+
+        // doc category options from opts.directory
+        if (opts.directory) {
+            try {
+                var optionfiles = fs.readdirSync(opts.directory);
+                optionfiles.forEach(function (filePath) {
+                    var fullPath = path.join(opts.directory, filePath);
+                    var stat = fs.statSync(fullPath);
+                    if (!stat.isFile()) return;
+                    var key = filePath.substr(0, filePath.lastIndexOf('.')); // remove '.json'
+                    categoryOptionMap[key] = loadMetadata(fullPath);
+                });
+
+                // normalize category options
+                /*
+                var keys = [];
+                for (var key in categoryOption) {
+                    if (!categoryOption.hasOwnProperty(key)) continue;
+                    keys.push(key);
+                }
+
+                keys.sort();
+
+                for (var key in categoryOption) {
+                    var terms = key.split('.');
+                    terms.pop(); // remove last category chunk (already had options)
+                    for (var i = 0; i < terms.length; i++) {
+                        var checkKey = terms.slice(0, i + 1).join('.');
+                        var option = categoryOption[checkKey];
+                        if (option) continue;
+                        if (i === 0) {
+                            categoryOption[checkKey] = categoryOption['default'];
+                        } else {
+                            categoryOption[checkKey] = categoryOption[terms.slice(0, i).join('.')];
+                        }
+                    }
+                }
+                */
+            } catch (ex) {
+            }
+        }
 
         // only process file has category metadata
         for (var filePath in files) {
-            if (!files.hasOwnProperty(filePath))
+            if (!files.hasOwnProperty(filePath)) {
                 continue;
-            
+            }
+
             // remove category file from metalsmith's files
             if (filePath.startsWith(categoryFilePrefix)) {
                 delete files[filePath];
                 continue;
             }
 
-            // TODO remove metadata file SHOULD NOT BE HERE
-            if (filePath.startsWith(metadataFilePrefix)) {
-                delete files[filePath];
-                continue;
-            }
-
-            var data = files[filePath];            
+            var data = files[filePath];
             filePath = filePath.replace(/\\/g, '/'); // replace all \ with /
 
             // add all content file to flat map
-            if (!data.category)
-                continue; // skip file with no category in metadata            
-            category.default.push(data); // add to default
+            if (!data.category) {
+                continue; // skip file with no category in metadata
+            }
+
+            categoryFlatMap['root'].files.push(data); // add to default
+
             data.path = filePath // add them path property
-            var categories = data.category.split('.');
+
+            var categoryChunks = data.category.split('.');
+            var categoryChunkLength = categoryChunks.length;
             // add content to flat categories map
-            for (var i = 0; i < categories.length; i++) {
-                var key = categories.slice(0, i + 1).join('.');
+            for (var i = 0; i < categoryChunkLength; i++) {
+                var key = categoryChunks.join('.');
                 // van add full tree category
-                category[key] = category[key] || [];
-                category[key].push(data);
+                categoryFlatMap[key] = categoryFlatMap[key] || {
+                    category: key,
+                    files: [],
+                };
+
+                categoryFlatMap[key].files.push(data);
+                categoryChunks.pop();
             }
         }
 
-        // sort category
-        for (var key in metadata.category) {
-            var settings = categoryOption[key];
-            if (!settings)
-                settings = categoryOption['default'];
+        var rootTree = Object.assign({}, DEFAULTS);
+        rootTree.category = 'root';
+        rootTree.categoryDisplayName = 'Root';
+        rootTree.children = [];
+        rootTree.parent = null;
+        rootTree.files = categoryFlatMap['root'].files;
+
+        // sort category, assign metadata
+        for (var key in categoryFlatMap) {
+            var settings = categoryOptionMap[key];
+            categoryFlatMap[key]['AllCategory'] = rootTree;
+            if (!settings) {
+                //settings = categoryOption['default'];
+                //console.log('null setting', key, categoryOption);
+                settings = Object.assign({}, DEFAULTS);
+            }
+            // fix if category don't have setting, get setting from parent whose have setting
+
+            for (var settingKey in settings) {
+                if (!settings.hasOwnProperty(settingKey)) continue;
+                if (settingKey === 'files') continue;
+                if (settingKey === 'parent') continue;
+                if (settingKey === 'children') continue;
+                if (settingKey === 'href') continue;
+
+                categoryFlatMap[key][settingKey] = settings[settingKey];
+            }
+
+            categoryFlatMap[key]['category'] = key;
+            // href property
+            var categoryPath = (key === 'root') ? './page' : key.replace(/\./g, '/');
+            categoryFlatMap[key].categoryPath = categoryPath;
+            categoryFlatMap[key].href = trimPermanentLink(interpolate(settings.first, categoryFlatMap[key]));
+
             var sort = settings.sortBy || 'date';
-            var col = metadata.category[key];
+            var col = categoryFlatMap[key].files;
 
             if ('function' == typeof sort) {
                 col.sort(sort);
@@ -346,6 +388,46 @@ module.exports = function (opts) {
             if (settings.reverse) col.reverse();
         }
 
-        return paginate(files, metalsmith, done);
+        // create categoryTree
+        var categoryKeys = Object.keys(categoryFlatMap);
+        categoryKeys.sort();
+        categoryKeys.forEach(function (key) {
+            var chunks = key.split('.');
+
+            var category = categoryFlatMap[key];
+            if (chunks.length == 1) {
+                // ignore root
+                if (key != 'root') {
+                    category.children = [];
+                    category.parent = rootTree;
+                    rootTree.children.push(category);
+                }
+            } else {
+                chunks.pop();
+                var parentNode = rootTree;
+                var count = 0;
+                chunks.forEach(function (chunkName) {
+                    count++;
+                    var fullCategoryName = chunks.slice(0, count).join('.');
+                    parentNode.children.some(function (node) {
+                        if (node.category == fullCategoryName) {
+                            parentNode = node;
+                            return true;
+                        }
+                        return false;
+                    });
+                });
+
+                category.children = [];
+                category.parent = rootTree;
+                parentNode.children.push(category);
+            }
+        });
+
+        //console.log('ROOT TREEEE', util.inspect(rootTree, { depth: 4 }));
+        metadata.AllCategory = rootTree;
+
+
+        return paginate(files, metalsmith, done, categoryFlatMap, categoryOptionMap);
     }
 }

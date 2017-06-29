@@ -7,7 +7,7 @@ var loadMetadata = require('read-metadata').sync;
 
 var DEFAULTS = {
     "sortBy": "date",
-    "reverse": false,
+    "reverse": true,
     "metadata": {},
     "displayName": "Root",
     "perPage": 10,

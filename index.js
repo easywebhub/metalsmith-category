@@ -427,7 +427,7 @@ module.exports = function (opts) {
         //console.log('ROOT TREEEE', util.inspect(rootTree, { depth: 4 }));
         metadata.AllCategory = rootTree;
 
-
-        return paginate(files, metalsmith, done, categoryFlatMap, categoryOptionMap);
+        return done();
+        // return paginate(files, metalsmith, done, categoryFlatMap, categoryOptionMap);
     }
 }

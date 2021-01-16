@@ -126,6 +126,8 @@ function paginate(files, metalsmith, done, categoryFlatMap, categoryOption) {
         if (pageOptions.filter) {
             toShow = collection.files.filter(toFn(pageOptions.filter))
         }
+        
+        if(toShow.length > 0) toShow = [toShow[0]];
 
         if (!pageOptions.template && !pageOptions.layout) {
             done(new TypeError('A template or layout is required (' + name + ')'))
@@ -427,7 +429,7 @@ module.exports = function (opts) {
         //console.log('ROOT TREEEE', util.inspect(rootTree, { depth: 4 }));
         metadata.AllCategory = rootTree;
 
-        return done();
-        // return paginate(files, metalsmith, done, categoryFlatMap, categoryOptionMap);
+        //return done();
+        return paginate(files, metalsmith, done, categoryFlatMap, categoryOptionMap);
     }
 }
